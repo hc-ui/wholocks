@@ -106,7 +106,7 @@ for h in result.holders:
 
 | Platform | Mechanism | Subprocesses spawned |
 |----------|-----------|----------------------|
-| Windows  | **Restart Manager API** (`rstrtmgr.dll` via `ctypes`) — the same API behind Windows' own *"file is open in another program"* dialog | none |
+| Windows  | **Restart Manager API** (the same API behind Windows' own *"file is open in another program"* dialog) **plus a kernel-level `NtQueryInformationFile` handle query** that also sees *directory* handles — Explorer windows and shells `cd`'d into a folder. Both via `ctypes`. | none |
 | Linux    | Scans `/proc/*/fd`, `maps`, `cwd`, `exe`, `root` directly | none |
 | macOS    | Drives the preinstalled `lsof` in its machine-readable `-F` mode | `lsof`, `ps` |
 
@@ -122,6 +122,7 @@ No drivers, no elevated service, no kernel tricks. Killing uses `TerminateProces
 | Readable answer | yes | raw handle dump | GUI browsing | terse columns | yes |
 | Kill with guardrails | yes (confirm, refuses system/critical) | no | yes | `fuser -k` (no confirm) | yes |
 | Wait-until-free mode | **yes** | no | no | no | no |
+| Sees folder/cwd lockers (Explorer, `cd`'d shells) | **yes** | needs admin | partial | `fuser` only | heuristic |
 | JSON + exit codes | yes | no | no | partial | no |
 | Targeted tips (Office/OneDrive/AV...) | **yes** | no | no | no | partial |
 | Dependencies | **zero** | – | – | – | zero (but Node) |
@@ -136,7 +137,7 @@ No drivers, no elevated service, no kernel tricks. Killing uses `TerminateProces
 
 ## Limitations (honest ones)
 
-- **Windows, deleting a folder:** if a console window merely has its *current directory* inside the folder, no file handle exists and the Restart Manager reports nothing — but deletion still fails. `wholocks` prints a hint about this case. `cd` elsewhere in that console and retry.
+- **Windows, folder held via a deep subfolder:** a shell `cd`'d into the folder itself (or any probed subfolder) *is* detected — but in non-recursive mode only the folder and its immediate children are probed. If deletion still fails, run again with `--recursive`.
 - **POSIX, other users' processes:** without `sudo`, `/proc` and `lsof` only reveal your own processes. `wholocks` counts what it couldn't inspect and says so instead of pretending the file is free.
 - **Windows, multiple targets:** the Restart Manager reports holders for the whole set of registered files, so per-file attribution isn't shown (Linux/macOS output lists the exact paths each process holds).
 - **PID reuse:** between scan and kill a PID could in theory be recycled; the window is milliseconds, but it exists — the confirmation prompt shows names precisely for this reason.
@@ -212,7 +213,7 @@ wholocks -r /mnt/usb
 
 | 平台 | 机制 | 是否调用外部命令 |
 |------|------|------------------|
-| Windows | **Restart Manager API**(`ctypes` 调 `rstrtmgr.dll`)——就是 Windows 自家「文件已在另一个程序中打开」对话框背后的那套官方 API | 否 |
+| Windows | **Restart Manager API**(Windows 自家「文件已在另一个程序中打开」对话框背后的官方 API)**加内核级 `NtQueryInformationFile` 句柄查询**——后者连**目录句柄**都能查到:资源管理器开着文件夹窗口、某个终端 `cd` 在文件夹里,这类"隐形占用"也能揪出来 | 否 |
 | Linux | 直接扫描 `/proc/*/fd`、`maps`、`cwd`、`exe` | 否 |
 | macOS | 调用系统自带 `lsof` 的机器可读模式 | `lsof`、`ps` |
 
@@ -228,7 +229,7 @@ wholocks -r /mnt/usb
 
 ## 已知局限
 
-- **Windows 删文件夹**:如果只是某个终端的「当前目录」在该文件夹里(没有打开任何文件句柄),Restart Manager 查不到——wholocks 会提示你这种情况,换个目录再删即可
+- **Windows 深层子目录占用**:终端 `cd` 在目标文件夹本身或已探测的子目录里都能查到;非递归模式只探测文件夹本身和第一层内容,删不掉时加 `--recursive` 再查一次
 - **POSIX 非 root**:只能看到自己的进程;查不到的进程数会如实报告,不会假装文件空闲
 - **Windows 多目标**:Restart Manager 返回的是整批文件的占用者,不区分单个文件(Linux/macOS 会列出每个进程具体占用的路径)
 

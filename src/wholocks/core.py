@@ -227,6 +227,11 @@ ADVICE = {
         "A database server holds its data files. Stop the service properly "
         "instead of killing it, or you risk corrupting the database."
     ),
+    "system": (
+        "Held by the Windows kernel itself (PID 4) - typically an SMB "
+        "network share, a filter driver, or kernel-level indexing. It "
+        "cannot be killed; retry in a moment."
+    ),
 }
 
 

@@ -37,6 +37,20 @@ SYNCHRONIZE = 0x00100000
 STILL_ACTIVE = 259
 WAIT_OBJECT_0 = 0
 
+FILE_READ_ATTRIBUTES = 0x0080
+FILE_SHARE_ALL = 0x1 | 0x2 | 0x4
+OPEN_EXISTING = 3
+FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+FileProcessIdsUsingFileInformation = 47
+STATUS_INFO_LENGTH_MISMATCH = 0xC0000004
+
+
+class IO_STATUS_BLOCK(ctypes.Structure):
+    _fields_ = (
+        ("Status", ctypes.c_void_p),
+        ("Information", ctypes.c_void_p),
+    )
+
 
 class RM_UNIQUE_PROCESS(ctypes.Structure):
     _fields_ = (
@@ -59,10 +73,11 @@ class RM_PROCESS_INFO(ctypes.Structure):
 
 _rm = None
 _k32 = None
+_nt = None
 
 
 def _load():
-    global _rm, _k32
+    global _rm, _k32, _nt
     if _rm is not None:
         return
     try:
@@ -117,9 +132,30 @@ def _load():
         ctypes.POINTER(wintypes.DWORD),
     )
     k32.GetExitCodeProcess.restype = wintypes.BOOL
+    k32.CreateFileW.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    k32.CreateFileW.restype = wintypes.HANDLE
+
+    nt = ctypes.WinDLL("ntdll", use_last_error=True)
+    nt.NtQueryInformationFile.argtypes = (
+        wintypes.HANDLE,
+        ctypes.POINTER(IO_STATUS_BLOCK),
+        ctypes.c_void_p,
+        wintypes.ULONG,
+        ctypes.c_int,
+    )
+    nt.NtQueryInformationFile.restype = ctypes.c_uint32
 
     _rm = rm
     _k32 = k32
+    _nt = nt
 
 
 def _expand_targets(files, dirs, recursive, max_files):
@@ -210,6 +246,82 @@ def _rm_query(paths):
         _rm.RmEndSession(handle.value)
 
 
+def _pids_using_path(path):
+    """Kernel-level answer: which PIDs hold an open handle to *path*?
+
+    Uses NtQueryInformationFile(FileProcessIdsUsingFileInformation), which -
+    unlike the Restart Manager - also works for directories. A console
+    window whose current directory is inside a folder holds a directory
+    handle, so this catches the classic "cmd is cd'd into the folder" case.
+    """
+    import struct as _struct
+
+    _load()
+    invalid = ctypes.c_void_p(-1).value
+    h = _k32.CreateFileW(
+        path,
+        FILE_READ_ATTRIBUTES,
+        FILE_SHARE_ALL,
+        None,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS,
+        None,
+    )
+    if not h or h == invalid:
+        return []
+    try:
+        ptr_size = ctypes.sizeof(ctypes.c_void_p)
+        size = ptr_size * 512
+        for _ in range(8):
+            buf = ctypes.create_string_buffer(size)
+            iosb = IO_STATUS_BLOCK()
+            status = _nt.NtQueryInformationFile(
+                h,
+                ctypes.byref(iosb),
+                buf,
+                size,
+                FileProcessIdsUsingFileInformation,
+            )
+            if status == STATUS_INFO_LENGTH_MISMATCH:
+                size *= 4
+                continue
+            if status != 0:
+                return []
+            count = _struct.unpack_from("<L", buf, 0)[0]
+            fmt = "<Q" if ptr_size == 8 else "<L"
+            pids = []
+            for i in range(count):
+                offset = ptr_size + i * ptr_size
+                if offset + ptr_size > size:
+                    break
+                pids.append(int(_struct.unpack_from(fmt, buf, offset)[0]))
+            return pids
+        return []
+    finally:
+        _k32.CloseHandle(h)
+
+
+def _subdirs(d, recursive, cap):
+    out = []
+    try:
+        if recursive:
+            for root, subdir_names, _names in os.walk(d):
+                for s in subdir_names:
+                    out.append(os.path.join(root, s))
+                    if len(out) >= cap:
+                        return out
+        else:
+            with os.scandir(d) as it:
+                for entry in it:
+                    if entry.is_dir(follow_symlinks=False):
+                        out.append(entry.path)
+                        if len(out) >= cap:
+                            break
+    except OSError:
+        pass
+    return out
+
+
 def _exe_path(pid):
     h = _k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not h:
@@ -237,9 +349,20 @@ def _filetime_to_iso(ft):
 
 def scan(files, dirs, recursive=False, max_files=10000):
     paths, warnings = _expand_targets(files, dirs, recursive, max_files)
-    holders = []
+    holder_map = {}
+
+    # 1) Restart Manager over the file list: rich info (app name, type,
+    #    start time), including processes that memory-map the files.
     if paths:
-        for info in _rm_query(paths):
+        try:
+            infos = _rm_query(paths)
+        except BackendUnavailable as e:
+            warnings.append(
+                "Restart Manager query failed (%s); falling back to the "
+                "direct handle query, results may be less complete" % e
+            )
+            infos = []
+        for info in infos:
             pid = int(info.Process.dwProcessId)
             exe = _exe_path(pid)
             name = os.path.basename(exe) if exe else (info.strAppName or "")
@@ -247,29 +370,63 @@ def scan(files, dirs, recursive=False, max_files=10000):
             desc = info.strAppName or None
             if app_type == "service" and info.strServiceShortName:
                 desc = "service: %s" % info.strServiceShortName
-            holders.append(
-                Holder(
+            holder_map[pid] = Holder(
+                pid=pid,
+                name=name,
+                description=desc,
+                exe=exe,
+                access=["handle"],
+                app_type=app_type,
+                started=_filetime_to_iso(info.Process.ProcessStartTime),
+            )
+
+    # 2) Kernel-level handle query on the explicit targets and on the
+    #    directories themselves. Unlike the Restart Manager this also sees
+    #    directory handles - Explorer windows and shells cd'd into a folder.
+    probe_targets = list(files) + list(dirs)
+    for d in dirs:
+        probe_targets.extend(_subdirs(d, recursive, cap=max_files))
+    my_pid = os.getpid()
+    probed = 0
+    for target in probe_targets:
+        if probed >= max_files:
+            break
+        probed += 1
+        for pid in _pids_using_path(target):
+            if pid == my_pid:
+                continue
+            h = holder_map.get(pid)
+            if h is None:
+                exe = _exe_path(pid)
+                if exe:
+                    name = os.path.basename(exe)
+                elif pid == 4:
+                    name = "System"
+                else:
+                    name = ""
+                h = Holder(
                     pid=pid,
                     name=name,
-                    description=desc,
                     exe=exe,
                     access=["handle"],
-                    app_type=app_type,
-                    started=_filetime_to_iso(info.Process.ProcessStartTime),
                 )
-            )
-    if dirs and not holders:
+                holder_map[pid] = h
+            if target not in h.paths:
+                h.paths.append(target)
+
+    holders = list(holder_map.values())
+    if dirs and not holders and not recursive:
         warnings.append(
-            "no file handles found. If you still cannot delete the folder, "
-            "a console window may have its current directory inside it "
-            "(cd elsewhere), or check hidden files with --recursive."
+            "nothing holds the folder or its immediate contents. If it "
+            "still cannot be deleted, something may hold a deeper item - "
+            "try --recursive."
         )
     return ScanResult(
         targets=[],
         holders=holders,
         scanned_files=len(paths),
         warnings=warnings,
-        backend="windows-restart-manager",
+        backend="windows-restart-manager+ntquery",
     )
 
 

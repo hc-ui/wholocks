@@ -70,7 +70,16 @@ def _enable_windows_ansi():
         import ctypes
 
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        kernel32.GetStdHandle.restype = ctypes.c_void_p
+        kernel32.GetStdHandle.argtypes = (ctypes.c_uint32,)
+        kernel32.GetConsoleMode.restype = ctypes.c_int
+        kernel32.GetConsoleMode.argtypes = (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint32),
+        )
+        kernel32.SetConsoleMode.restype = ctypes.c_int
+        kernel32.SetConsoleMode.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        handle = kernel32.GetStdHandle(0xFFFFFFF5)  # STD_OUTPUT_HANDLE (-11)
         mode = ctypes.c_uint32()
         if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             return False
@@ -388,6 +397,12 @@ def _mode_wait(args, style):
 
 
 def main(argv=None):
+    # never crash on paths the console encoding cannot represent
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
     parser = build_parser()
     args = parser.parse_args(argv)
     style = _make_style(args.no_color)

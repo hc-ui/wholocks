@@ -129,6 +129,26 @@ def test_multiple_paths(hold_file, tmp_path):
     assert str(proc.pid) in out
 
 
+def test_detects_cwd_holder(hold_cwd, tmp_path):
+    """A process merely cd'd into a folder blocks its deletion on Windows -
+    the classic hidden locker. All three backends must find it."""
+    d = tmp_path / "busy-dir"
+    d.mkdir()
+    proc = hold_cwd(d)
+    code, out, err = run_cli(d)
+    assert code == 1, "stdout=%s stderr=%s" % (out, err)
+    assert str(proc.pid) in out
+
+
+def test_recursive_detects_deep_cwd(hold_cwd, tmp_path):
+    deep = tmp_path / "project" / "node_modules" / ".vite"
+    deep.mkdir(parents=True)
+    proc = hold_cwd(deep)
+    code, out, err = run_cli("--recursive", tmp_path / "project")
+    assert code == 1, "stdout=%s stderr=%s" % (out, err)
+    assert str(proc.pid) in out
+
+
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="mmap access labels are Linux-specific")
 def test_mmap_detection_linux(hold_file):
     from conftest import MMAP_FILE_SCRIPT

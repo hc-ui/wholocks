@@ -27,6 +27,12 @@ print("READY", flush=True)
 time.sleep(float(sys.argv[2]))
 """
 
+CWD_SCRIPT = r"""
+import sys, time
+print("READY", flush=True)
+time.sleep(float(sys.argv[1]))
+"""
+
 
 def _spawn(script, path, seconds):
     proc = subprocess.Popen(
@@ -58,6 +64,37 @@ def hold_file(tmp_path):
         proc = _spawn(script, path, seconds)
         children.append(proc)
         return path, proc
+
+    yield _hold
+    for proc in children:
+        if proc.poll() is None:
+            proc.kill()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+@pytest.fixture
+def hold_cwd():
+    """Factory: spawn a child whose current working directory is *dirpath*."""
+    children = []
+
+    def _hold(dirpath, seconds=120.0):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", CWD_SCRIPT, str(seconds)],
+            cwd=str(dirpath),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        line = proc.stdout.readline()
+        if "READY" not in line:
+            err = proc.stderr.read()
+            proc.kill()
+            raise RuntimeError("cwd child failed to start: %r / %s" % (line, err))
+        children.append(proc)
+        return proc
 
     yield _hold
     for proc in children:

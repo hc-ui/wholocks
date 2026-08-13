@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0 - 2026-08-13
+
+The classic hidden locker - a console window merely `cd`'d into a folder, or
+an Explorer window showing it - is now detected on Windows.
+
+- Windows: added a kernel-level `NtQueryInformationFile`
+  (`FileProcessIdsUsingFileInformation`) probe alongside the Restart
+  Manager. Unlike the Restart Manager it also reports *directory* handles,
+  so Explorer windows and shells sitting inside a folder are found. It also
+  attributes which explicit target each process holds.
+- Windows: a Restart Manager failure no longer aborts the scan; it degrades
+  to the direct handle query with a warning.
+- Output streams no longer crash on file names the console encoding cannot
+  represent (`errors="replace"`).
+- Fixed 64-bit handle truncation risk in the ANSI-color console setup.
+- Tests: fixed `/proc` fixture paths on macOS (`/tmp` symlink realpath);
+  added cross-platform cwd-holder integration tests.
+
 ## 0.1.0 - 2026-08-13
 
 Initial release.

@@ -38,9 +38,10 @@ def test_finds_fd_holder(fake_proc, tmp_path):
 
     target = tmp_path / "held.txt"
     target.write_text("data")
+    real_target = os.path.realpath(str(target))  # /proc links hold real paths
 
     pid_dir = _make_pid(fake_proc, 4321)
-    os.symlink(str(target), pid_dir / "fd" / "3")
+    os.symlink(real_target, pid_dir / "fd" / "3")
     os.symlink("/", pid_dir / "cwd")
     os.symlink("/usr/bin/testproc", pid_dir / "exe")
 
@@ -51,7 +52,7 @@ def test_finds_fd_holder(fake_proc, tmp_path):
     assert h.name == "testproc"
     assert h.cmdline == "testproc --flag"
     assert h.access == ["fd"]
-    assert str(target) in h.paths[0]
+    assert real_target in h.paths[0]
     assert h.started is not None
 
 
@@ -62,7 +63,7 @@ def test_finds_cwd_holder_for_directory(fake_proc, tmp_path):
     held_dir.mkdir()
 
     pid_dir = _make_pid(fake_proc, 5000, comm="bash")
-    os.symlink(str(held_dir), pid_dir / "cwd")
+    os.symlink(os.path.realpath(str(held_dir)), pid_dir / "cwd")
 
     result = _linux.scan([], [str(held_dir)], recursive=False)
     assert [h.pid for h in result.holders] == [5000]
@@ -77,7 +78,7 @@ def test_deleted_fd_labelled(fake_proc, tmp_path):
 
     pid_dir = _make_pid(fake_proc, 6000, comm="logger")
     # /proc shows deleted-but-open files as "path (deleted)"
-    os.symlink(str(target) + " (deleted)", pid_dir / "fd" / "7")
+    os.symlink(os.path.realpath(str(target)) + " (deleted)", pid_dir / "fd" / "7")
 
     result = _linux.scan([str(target)], [], recursive=False)
     assert result.holders
@@ -110,7 +111,7 @@ def test_unrelated_process_not_reported(fake_proc, tmp_path):
     other.write_text("nope")
 
     pid_dir = _make_pid(fake_proc, 8000)
-    os.symlink(str(other), pid_dir / "fd" / "3")
+    os.symlink(os.path.realpath(str(other)), pid_dir / "fd" / "3")
 
     result = _linux.scan([str(target)], [], recursive=False)
     assert result.holders == []
@@ -125,7 +126,7 @@ def test_recursive_dir_match(fake_proc, tmp_path):
     target.write_text("x")
 
     pid_dir = _make_pid(fake_proc, 9000)
-    os.symlink(str(target), pid_dir / "fd" / "4")
+    os.symlink(os.path.realpath(str(target)), pid_dir / "fd" / "4")
 
     non_rec = _linux.scan([], [str(tmp_path / "root-dir")], recursive=False)
     assert non_rec.holders == []
