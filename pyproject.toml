@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wholocks"
+dynamic = ["version"]
+description = "Find which process is locking a file - then kill it or wait for it. Windows, macOS, Linux. Zero dependencies."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "hc-ui" }]
+keywords = [
+    "file-lock",
+    "file-in-use",
+    "cannot-delete",
+    "locked-file",
+    "restart-manager",
+    "lsof",
+    "fuser",
+    "handle",
+    "process",
+    "cli",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Filesystems",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/hc-ui/wholocks"
+Repository = "https://github.com/hc-ui/wholocks"
+Issues = "https://github.com/hc-ui/wholocks/issues"
+Changelog = "https://github.com/hc-ui/wholocks/blob/main/CHANGELOG.md"
+
+[project.scripts]
+wholocks = "wholocks.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools.dynamic]
+version = { attr = "wholocks.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
