@@ -165,6 +165,25 @@ def test_recursive_detects_deep_cwd(hold_cwd, tmp_path):
     assert str(proc.pid) in out
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="SIGTERM semantics are POSIX")
+def test_stubborn_holder_needs_force(hold_file, tmp_path):
+    script = (
+        "import signal, sys, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "f = open(sys.argv[1], 'r+b')\n"
+        "print('READY', flush=True)\n"
+        "time.sleep(float(sys.argv[2]))\n"
+    )
+    path, proc = hold_file(path=tmp_path / "stubborn.txt", seconds=120, script=script)
+
+    code, out, err = run_cli("--kill", "--yes", path)
+    assert code == 1, "SIGTERM-immune holder should survive: %s / %s" % (out, err)
+    assert proc.poll() is None
+
+    code, out, err = run_cli("--kill", "--yes", "--force", path)
+    assert code == 0, "stdout=%s stderr=%s" % (out, err)
+
+
 @pytest.mark.skipif(sys.platform.startswith("win") or sys.platform == "darwin",
                     reason="hardlink-inode matching is implemented in the /proc backend")
 def test_hardlink_detection(hold_file, tmp_path):

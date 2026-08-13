@@ -279,7 +279,7 @@ def kill_block_reason(holder: Holder, force: bool = False) -> Optional[str]:
     return None
 
 
-def kill_holder(holder: Holder, force: bool = False, grace: float = 5.0) -> "tuple[bool, str]":
+def kill_holder(holder: Holder, force: bool = False, grace: float = 3.0) -> "tuple[bool, str]":
     """Terminate one holder. Returns (ok, message)."""
     if sys.platform.startswith("win"):
         from . import _windows
@@ -308,16 +308,31 @@ def kill_holder(holder: Holder, force: bool = False, grace: float = 5.0) -> "tup
             return False, "permission denied (try sudo)"
         time.sleep(0.2)
         return True, "killed (SIGKILL)"
-    return False, "still running after SIGTERM (use --force to SIGKILL)"
+    return False, (
+        "did not exit within %.0fs of SIGTERM (or is a zombie awaiting its "
+        "parent) - the scan below is authoritative; --force sends SIGKILL"
+        % grace
+    )
 
 
 def _pid_alive(pid: int) -> bool:
+    """True while *pid* can still hold files (zombies cannot)."""
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        pass
+    if sys.platform.startswith("linux"):
+        # a zombie keeps its PID but the kernel already closed its files
+        try:
+            with open("/proc/%d/stat" % pid, "rb") as fh:
+                data = fh.read().decode("ascii", "replace")
+            state = data[data.rfind(")") + 2 :].split(None, 1)[0]
+            if state == "Z":
+                return False
+        except (OSError, IndexError):
+            pass
     return True
 
 

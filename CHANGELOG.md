@@ -10,6 +10,10 @@
   while `--kill` or `--wait` is running (temp files deleted by their dying
   holder), wholocks now reports the path as freed instead of exiting with a
   usage error. A typo'd path still fails loudly up front.
+- **POSIX kill no longer stalls on zombies.** A terminated child that has
+  not been reaped by its parent kept the old liveness poll busy for the full
+  grace period; on Linux the zombie state is now detected instantly, and the
+  "did not exit" message explains that the final scan is authoritative.
 
 ## 0.2.0 - 2026-08-13
 
