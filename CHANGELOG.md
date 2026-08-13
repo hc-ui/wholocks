@@ -12,6 +12,11 @@ an Explorer window showing it - is now detected on Windows.
   attributes which explicit target each process holds.
 - Windows: a Restart Manager failure no longer aborts the scan; it degrades
   to the direct handle query with a warning.
+- Windows: holders now show the owning account name (process token query),
+  matching the POSIX output.
+- Shells (cmd, PowerShell, bash, zsh, ...) get a targeted tip - they usually
+  hold a folder via their current directory; the kernel PID 4 "System"
+  holder is explained too.
 - Output streams no longer crash on file names the console encoding cannot
   represent (`errors="replace"`).
 - Fixed 64-bit handle truncation risk in the ANSI-color console setup.

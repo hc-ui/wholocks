@@ -44,6 +44,12 @@ The classic answers are painful: on Windows you download Sysinternals `handle.ex
 pip install git+https://github.com/hc-ui/wholocks
 ```
 
+Or try it once without installing anything (needs [uv](https://docs.astral.sh/uv/)):
+
+```bash
+uvx --from git+https://github.com/hc-ui/wholocks wholocks stubborn-folder
+```
+
 PyPI release is being set up — `pip install wholocks` will work once it's live. Either way there are no dependencies; it's a single pure-stdlib package.
 
 ## Usage

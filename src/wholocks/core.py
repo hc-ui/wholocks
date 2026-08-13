@@ -234,6 +234,14 @@ ADVICE = {
     ),
 }
 
+_SHELL_TIP = (
+    "A terminal window is holding this path - most likely its current "
+    "directory is inside. Switch that window to another folder (cd elsewhere) "
+    "or close it."
+)
+for _shell in ("cmd", "powershell", "pwsh", "bash", "zsh", "fish", "sh", "dash", "nu"):
+    ADVICE[_shell] = _SHELL_TIP
+
 
 def advice_for(holder: Holder) -> Optional[str]:
     base = (holder.name or "").lower()

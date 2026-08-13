@@ -93,6 +93,15 @@ class TestAdvice:
         h = Holder(pid=1, name="postgres")
         assert "corrupt" in advice_for(h)
 
+    def test_shells_get_cwd_tip(self):
+        for shell in ("cmd.exe", "powershell.exe", "bash", "zsh"):
+            tip = advice_for(Holder(pid=1, name=shell))
+            assert tip and "terminal" in tip
+
+    def test_kernel_system_process(self):
+        h = Holder(pid=4, name="System")
+        assert "kernel" in advice_for(h)
+
 
 class TestKillSafety:
     def test_refuses_critical(self):

@@ -74,10 +74,11 @@ class RM_PROCESS_INFO(ctypes.Structure):
 _rm = None
 _k32 = None
 _nt = None
+_adv = None
 
 
 def _load():
-    global _rm, _k32, _nt
+    global _rm, _k32, _nt, _adv
     if _rm is not None:
         return
     try:
@@ -153,9 +154,36 @@ def _load():
     )
     nt.NtQueryInformationFile.restype = ctypes.c_uint32
 
+    adv = ctypes.WinDLL("advapi32", use_last_error=True)
+    adv.OpenProcessToken.argtypes = (
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    )
+    adv.OpenProcessToken.restype = wintypes.BOOL
+    adv.GetTokenInformation.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    adv.GetTokenInformation.restype = wintypes.BOOL
+    adv.LookupAccountSidW.argtypes = (
+        wintypes.LPCWSTR,
+        ctypes.c_void_p,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(ctypes.c_int),
+    )
+    adv.LookupAccountSidW.restype = wintypes.BOOL
+
     _rm = rm
     _k32 = k32
     _nt = nt
+    _adv = adv
 
 
 def _expand_targets(files, dirs, recursive, max_files):
@@ -336,6 +364,56 @@ def _exe_path(pid):
         _k32.CloseHandle(h)
 
 
+TOKEN_QUERY = 0x0008
+_TOKEN_USER_CLASS = 1  # TokenUser
+
+
+def _process_user(pid):
+    """Best-effort account name owning *pid* (None when not visible)."""
+    h = _k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        return None
+    try:
+        token = wintypes.HANDLE()
+        if not _adv.OpenProcessToken(h, TOKEN_QUERY, ctypes.byref(token)):
+            return None
+        try:
+            size = wintypes.DWORD(0)
+            _adv.GetTokenInformation(
+                token, _TOKEN_USER_CLASS, None, 0, ctypes.byref(size)
+            )
+            if not size.value:
+                return None
+            buf = ctypes.create_string_buffer(size.value)
+            if not _adv.GetTokenInformation(
+                token, _TOKEN_USER_CLASS, buf, size, ctypes.byref(size)
+            ):
+                return None
+            # TOKEN_USER starts with SID_AND_ATTRIBUTES { PSID Sid; ... }
+            sid = ctypes.cast(buf, ctypes.POINTER(ctypes.c_void_p)).contents
+            name_len = wintypes.DWORD(0)
+            dom_len = wintypes.DWORD(0)
+            use = ctypes.c_int(0)
+            _adv.LookupAccountSidW(
+                None, sid, None, ctypes.byref(name_len),
+                None, ctypes.byref(dom_len), ctypes.byref(use),
+            )
+            if not name_len.value:
+                return None
+            name = ctypes.create_unicode_buffer(name_len.value)
+            dom = ctypes.create_unicode_buffer(dom_len.value or 1)
+            if not _adv.LookupAccountSidW(
+                None, sid, name, ctypes.byref(name_len),
+                dom, ctypes.byref(dom_len), ctypes.byref(use),
+            ):
+                return None
+            return name.value or None
+        finally:
+            _k32.CloseHandle(token)
+    finally:
+        _k32.CloseHandle(h)
+
+
 def _filetime_to_iso(ft):
     ticks = (ft.dwHighDateTime << 32) | ft.dwLowDateTime
     if not ticks:
@@ -375,6 +453,7 @@ def scan(files, dirs, recursive=False, max_files=10000):
                 name=name,
                 description=desc,
                 exe=exe,
+                user=_process_user(pid),
                 access=["handle"],
                 app_type=app_type,
                 started=_filetime_to_iso(info.Process.ProcessStartTime),
@@ -408,6 +487,7 @@ def scan(files, dirs, recursive=False, max_files=10000):
                     pid=pid,
                     name=name,
                     exe=exe,
+                    user=_process_user(pid),
                     access=["handle"],
                 )
                 holder_map[pid] = h

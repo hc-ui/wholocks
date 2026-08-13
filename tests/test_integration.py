@@ -48,6 +48,7 @@ def test_json_output(hold_file):
     holder = next(h for h in payload["holders"] if h["pid"] == proc.pid)
     assert holder["access"]
     assert "python" in (holder["name"] or "").lower() or holder["exe"]
+    assert holder["user"], "user field should be resolved for our own child"
     for key in ("targets", "backend", "warnings", "scanned_files"):
         assert key in payload
 
