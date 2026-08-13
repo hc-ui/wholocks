@@ -106,6 +106,21 @@ def test_wait_timeout(hold_file):
     assert "timed out" in out
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX allows unlinking a held file")
+def test_wait_succeeds_when_holder_deletes_file(hold_file, tmp_path):
+    script = (
+        "import os, sys, time\n"
+        "f = open(sys.argv[1], 'r+b')\n"
+        "print('READY', flush=True)\n"
+        "time.sleep(1.0)\n"
+        "os.unlink(sys.argv[1])\n"
+        "time.sleep(float(sys.argv[2]))\n"
+    )
+    path, proc = hold_file(path=tmp_path / "doomed.txt", seconds=60, script=script)
+    code, out, err = run_cli("--wait", "--timeout", "30", path)
+    assert code == 0, "stdout=%s stderr=%s" % (out, err)
+
+
 def test_recursive_directory(hold_file, tmp_path):
     sub = tmp_path / "outer" / "inner"
     sub.mkdir(parents=True)
@@ -148,6 +163,24 @@ def test_recursive_detects_deep_cwd(hold_cwd, tmp_path):
     code, out, err = run_cli("--recursive", tmp_path / "project")
     assert code == 1, "stdout=%s stderr=%s" % (out, err)
     assert str(proc.pid) in out
+
+
+@pytest.mark.skipif(sys.platform.startswith("win") or sys.platform == "darwin",
+                    reason="hardlink-inode matching is implemented in the /proc backend")
+def test_hardlink_detection(hold_file, tmp_path):
+    original = tmp_path / "app.log"
+    original.write_bytes(b"log data")
+    link = tmp_path / "rotated.log"
+    os.link(original, link)
+
+    # the process holds the file via ONE name...
+    path, proc = hold_file(path=link)
+    # ...but we ask about the OTHER name
+    code, out, err = run_cli("--json", original)
+    assert code == 1, "stdout=%s stderr=%s" % (out, err)
+    payload = json.loads(out)
+    holder = next(h for h in payload["holders"] if h["pid"] == proc.pid)
+    assert any("hardlink" in a or a == "fd" for a in holder["access"])
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="mmap access labels are Linux-specific")

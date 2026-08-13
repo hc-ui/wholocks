@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 - 2026-08-13
+
+- **Linux: hardlink detection.** When a process holds the same file under a
+  different name (log rotation, backup snapshots), path matching misses it -
+  the /proc backend now also compares (device, inode) and labels these
+  holders `fd (hardlink)`.
+- **Vanishing paths are success, not an error.** If the target disappears
+  while `--kill` or `--wait` is running (temp files deleted by their dying
+  holder), wholocks now reports the path as freed instead of exiting with a
+  usage error. A typo'd path still fails loudly up front.
+
 ## 0.2.0 - 2026-08-13
 
 The classic hidden locker - a console window merely `cd`'d into a folder, or

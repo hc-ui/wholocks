@@ -331,8 +331,16 @@ def wait_until_free(
     """Poll until no process holds *paths*. Returns (became_free, waited_seconds)."""
     start = time.monotonic()
     interval = 0.5
+    first = True
     while True:
-        result = find_holders(paths, recursive=recursive, max_files=max_files)
+        try:
+            result = find_holders(paths, recursive=recursive, max_files=max_files)
+        except UsageError:
+            if first:
+                raise  # a typo'd path should still fail loudly
+            # the path disappeared while we were waiting - it is free now
+            return True, time.monotonic() - start
+        first = False
         waited = time.monotonic() - start
         if result.free:
             return True, waited

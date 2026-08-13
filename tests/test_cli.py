@@ -102,3 +102,49 @@ class TestReportOutput:
         assert payload["holders"][0]["pid"] == 7
         assert payload["holders"][0]["advice"]  # node has a tip
         assert "wholocks" in payload
+
+
+class TestVanishingPaths:
+    """A path disappearing mid-action means it is free, not an error."""
+
+    def test_kill_succeeds_when_path_vanishes(self, existing_file, monkeypatch, capsys):
+        from wholocks.core import UsageError
+
+        holder = Holder(pid=99999999, name="ghost.exe", access=["handle"])
+        calls = {"n": 0}
+
+        def fake(paths, recursive=False, max_files=10000):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return ScanResult(targets=list(paths), holders=[holder], backend="fake")
+            raise UsageError("path does not exist: %s" % paths[0])
+
+        monkeypatch.setattr(cli, "find_holders", fake)
+        monkeypatch.setattr(cli, "kill_holder", lambda h, force=False: (True, "terminated"))
+        assert cli.main(["--kill", "--yes", "--no-color", existing_file]) == 0
+        out = capsys.readouterr().out
+        assert "now free" in out
+
+    def test_wait_succeeds_when_path_vanishes(self, existing_file, monkeypatch):
+        import wholocks.core as core
+        from wholocks.core import UsageError
+
+        holder = Holder(pid=99999999, name="ghost.exe", access=["handle"])
+        calls = {"n": 0}
+
+        def fake(paths, recursive=False, max_files=10000):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return ScanResult(targets=list(paths), holders=[holder], backend="fake")
+            raise UsageError("path does not exist: %s" % paths[0])
+
+        monkeypatch.setattr(core, "find_holders", fake)
+        became_free, waited = core.wait_until_free([existing_file], timeout=10)
+        assert became_free is True
+
+    def test_wait_typo_still_fails_loudly(self, tmp_path):
+        import wholocks.core as core
+        from wholocks.core import UsageError
+
+        with pytest.raises(UsageError):
+            core.wait_until_free([str(tmp_path / "never-existed.txt")], timeout=1)

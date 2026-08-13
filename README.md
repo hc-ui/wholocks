@@ -85,6 +85,12 @@ wholocks --wait --timeout 300 monthly.xlsx && cp monthly.xlsx archive/
 wholocks -r /mnt/usb
 ```
 
+**"Why can't I delete the folder I'm standing in?"**
+
+```bash
+wholocks .    # spoiler: your own terminal is one of the holders
+```
+
 **In CI / scripts** — exit codes make it composable:
 
 | code | meaning |
@@ -147,6 +153,7 @@ No drivers, no elevated service, no kernel tricks. Killing uses `TerminateProces
 - **POSIX, other users' processes:** without `sudo`, `/proc` and `lsof` only reveal your own processes. `wholocks` counts what it couldn't inspect and says so instead of pretending the file is free.
 - **Windows, multiple targets:** the Restart Manager reports holders for the whole set of registered files, so per-file attribution isn't shown (Linux/macOS output lists the exact paths each process holds).
 - **PID reuse:** between scan and kill a PID could in theory be recycled; the window is milliseconds, but it exists — the confirmation prompt shows names precisely for this reason.
+- **Network shares:** holders on the *other* machine of an SMB/NFS share are invisible to local APIs; results cover local processes only.
 
 ## FAQ
 
@@ -237,6 +244,7 @@ wholocks -r /mnt/usb
 
 - **Windows 深层子目录占用**:终端 `cd` 在目标文件夹本身或已探测的子目录里都能查到;非递归模式只探测文件夹本身和第一层内容,删不掉时加 `--recursive` 再查一次
 - **POSIX 非 root**:只能看到自己的进程;查不到的进程数会如实报告,不会假装文件空闲
+- **网络共享**:SMB/NFS 上另一台机器的占用者本机 API 看不到,结果仅覆盖本机进程
 - **Windows 多目标**:Restart Manager 返回的是整批文件的占用者,不区分单个文件(Linux/macOS 会列出每个进程具体占用的路径)
 
 ## License

@@ -334,7 +334,12 @@ def _mode_kill(args, style):
         kill_results.append({"pid": h.pid, "name": h.name, "ok": ok, "detail": detail})
 
     # the truthful success metric: is the file free now?
-    after = find_holders(args.paths, recursive=args.recursive, max_files=args.max_files)
+    try:
+        after = find_holders(args.paths, recursive=args.recursive, max_files=args.max_files)
+    except UsageError:
+        # the path vanished when its holder died (temp files, delete-on-exit):
+        # that is the most definitive kind of "free"
+        after = ScanResult(targets=[os.path.abspath(p) for p in args.paths], holders=[])
 
     if args.json:
         payload = _result_dict(after)
@@ -383,7 +388,10 @@ def _mode_wait(args, style):
         on_poll=on_poll,
     )
     if args.json:
-        result = find_holders(args.paths, recursive=args.recursive, max_files=args.max_files)
+        try:
+            result = find_holders(args.paths, recursive=args.recursive, max_files=args.max_files)
+        except UsageError:
+            result = ScanResult(targets=[os.path.abspath(p) for p in args.paths], holders=[])
         payload = _result_dict(result)
         payload["waited_seconds"] = round(waited, 2)
         payload["timed_out"] = not became_free

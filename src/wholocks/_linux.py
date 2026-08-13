@@ -91,8 +91,21 @@ def _proc_identity(pid_dir):
     return name, cmdline, user
 
 
+def _target_inodes(files):
+    """(st_dev, st_ino) of the file targets - catches hardlinked names."""
+    inodes = set()
+    for f in files:
+        try:
+            st = os.stat(f)
+            inodes.add((st.st_dev, st.st_ino))
+        except OSError:
+            pass
+    return inodes
+
+
 def scan(files, dirs, recursive=False, max_files=10000):
     match = make_matcher(files, dirs, recursive)
+    target_inodes = _target_inodes(files)
     holders = []
     inaccessible = 0
     warnings = []
@@ -140,12 +153,21 @@ def scan(files, dirs, recursive=False, max_files=10000):
                     continue
             else:
                 for fd in fd_entries:
-                    target = _read_link(os.path.join(fd_dir, fd))
+                    fd_path = os.path.join(fd_dir, fd)
+                    target = _read_link(fd_path)
                     if target is None:
                         continue
                     target, deleted = _strip_deleted(target)
                     if match(target):
                         add("fd (deleted)" if deleted else "fd")
+                    elif target_inodes and target.startswith("/"):
+                        # same file under another name (hardlink)?
+                        try:
+                            st = os.stat(fd_path)
+                            if (st.st_dev, st.st_ino) in target_inodes:
+                                add("fd (hardlink)")
+                        except OSError:
+                            pass
             try:
                 with open(os.path.join(pid_dir, "maps"), "r") as fh:
                     for line in fh:
