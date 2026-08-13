@@ -139,6 +139,9 @@ def scan(files, dirs, recursive=False, max_files=10000):
         raise BackendUnavailable(
             "lsof not found - install it or run from a standard macOS shell"
         )
+    # align with the kernel's view: /tmp and /var are symlinks into /private
+    files = [os.path.realpath(f) for f in files]
+    dirs = [os.path.realpath(d) for d in dirs]
     cmd = [lsof, "-n", "-P", "-F", "pcufn"]
     for d in dirs:
         cmd += ["+D" if recursive else "+d", d]
