@@ -533,11 +533,17 @@ def kill(pid, grace=5.0):
         _k32.CloseHandle(h)
 
 
+ERROR_ACCESS_DENIED = 5
+ERROR_INVALID_PARAMETER = 87
+
+
 def _pid_exists(pid):
     _load()
     h = _k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not h:
-        return False
+        # access denied means the process exists but is protected;
+        # invalid parameter means there is no such process
+        return ctypes.get_last_error() == ERROR_ACCESS_DENIED
     try:
         code = wintypes.DWORD()
         if _k32.GetExitCodeProcess(h, ctypes.byref(code)):
