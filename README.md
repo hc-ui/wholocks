@@ -41,16 +41,12 @@ The classic answers are painful: on Windows you download Sysinternals `handle.ex
 ## Install
 
 ```bash
-pip install git+https://github.com/hc-ui/wholocks
+pip install git+https://github.com/hc-ui/wholocks.git
 ```
 
-Or try it once without installing anything (needs [uv](https://docs.astral.sh/uv/)):
+This repo replaces the archived [`wholock`](https://github.com/hc-ui/wholock). Zero dependencies. Not on PyPI yet.
 
-```bash
-uvx --from git+https://github.com/hc-ui/wholocks wholocks stubborn-folder
-```
-
-PyPI release is being set up — `pip install wholocks` will work once it's live. Either way there are no dependencies; it's a single pure-stdlib package.
+Same toolbox: [whoseport](https://github.com/hc-ui/whoseport) · [longpath](https://github.com/hc-ui/longpath) · [eoldoctor](https://github.com/hc-ui/eoldoctor)
 
 ## Usage
 
@@ -183,10 +179,10 @@ No drivers, no elevated service, no kernel tricks. Killing uses `TerminateProces
 ## 安装
 
 ```bash
-pip install git+https://github.com/hc-ui/wholocks
+pip install git+https://github.com/hc-ui/wholocks.git
 ```
 
-PyPI 上架流程进行中,届时 `pip install wholocks` 即可。
+尚未上 PyPI。本仓取代已归档的 [`wholock`](https://github.com/hc-ui/wholock)。
 
 ## 用法
 
